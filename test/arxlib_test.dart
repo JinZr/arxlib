@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:arxlib/arxlib.dart';
 import 'package:test/test.dart';
 
@@ -15,13 +17,34 @@ const _sampleFeed = '''
     <published>2024-01-01T00:00:00Z</published>
     <title>Test Title</title>
     <summary>Test summary</summary>
-    <author><name>Ada Lovelace</name></author>
+    <author>
+      <name>Ada Lovelace</name>
+      <arxiv:affiliation>Analytical Engine Institute</arxiv:affiliation>
+    </author>
     <link rel="alternate" href="http://arxiv.org/abs/1234.5678v1"/>
     <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
     <arxiv:primary_category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
     <arxiv:comment>12 pages</arxiv:comment>
     <arxiv:journal_ref>Journal</arxiv:journal_ref>
     <arxiv:doi>10.1000/test</arxiv:doi>
+  </entry>
+</feed>
+''';
+
+const _errorFeed = '''
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+      xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title type="html">ArXiv Query: search_query=&amp;id_list=broken-id</title>
+  <id>http://arxiv.org/api/errors#incorrect_id_format_for_id_list</id>
+  <updated>2026-02-06T00:00:00-04:00</updated>
+  <link href="http://arxiv.org/api/errors#incorrect_id_format_for_id_list"
+        rel="alternate" type="text/html"/>
+  <entry>
+    <id>http://arxiv.org/api/errors#incorrect_id_format_for_id_list</id>
+    <title>Error</title>
+    <summary>This id value is not valid for id_list.</summary>
   </entry>
 </feed>
 ''';
@@ -45,15 +68,15 @@ class FakeClock implements ArxivClock {
 class FakeHttpClient implements ArxivHttpClient {
   FakeHttpClient(this._handler);
 
-  final ArxivHttpResponse Function(Uri uri, Map<String, String>? headers)
-      _handler;
+  final FutureOr<ArxivHttpResponse> Function(
+    Uri uri,
+    Map<String, String>? headers,
+  )
+  _handler;
   final List<Uri> requested = [];
 
   @override
-  Future<ArxivHttpResponse> get(
-    Uri uri, {
-    Map<String, String>? headers,
-  }) async {
+  Future<ArxivHttpResponse> get(Uri uri, {Map<String, String>? headers}) async {
     requested.add(uri);
     return _handler(uri, headers);
   }
@@ -84,6 +107,7 @@ void main() {
     expect(entry.title, 'Test Title');
     expect(entry.summary, 'Test summary');
     expect(entry.authors.first.name, 'Ada Lovelace');
+    expect(entry.authors.first.affiliation, 'Analytical Engine Institute');
     expect(entry.primaryCategory?.term, 'cs.AI');
     expect(entry.comment, '12 pages');
     expect(entry.journalRef, 'Journal');
@@ -122,6 +146,33 @@ void main() {
     expect(uri.queryParameters['max_results'], '10');
     expect(uri.queryParameters['sortBy'], 'relevance');
     expect(uri.queryParameters['sortOrder'], 'descending');
+  });
+
+  test('supports search_query with id_list filter', () async {
+    final fakeHttp = FakeHttpClient(
+      (uri, headers) =>
+          ArxivHttpResponse(statusCode: 200, body: _sampleFeed, headers: {}),
+    );
+    final client = ArxivClient(
+      httpClient: fakeHttp,
+      clock: FakeClock(DateTime.utc(2024, 1, 1)),
+      config: const ArxivClientConfig(
+        throttle: Duration.zero,
+        cacheTtl: Duration.zero,
+      ),
+    );
+
+    await client.search(
+      ArxivQuery.searchWithIdFilter('cat:cs.AI', [
+        '1234.5678v1',
+        '9876.5432v1',
+      ], maxResults: 5),
+    );
+
+    final uri = fakeHttp.requested.single;
+    expect(uri.queryParameters['search_query'], 'cat:cs.AI');
+    expect(uri.queryParameters['id_list'], '1234.5678v1,9876.5432v1');
+    expect(uri.queryParameters['max_results'], '5');
   });
 
   test('uses cache for same-day request', () async {
@@ -169,6 +220,49 @@ void main() {
     expect(clock.delays, [const Duration(seconds: 3)]);
   });
 
+  test('serializes requests to a single in-flight connection', () async {
+    final gate = Completer<void>();
+    var calls = 0;
+    var inFlight = 0;
+    var maxInFlight = 0;
+
+    final fakeHttp = FakeHttpClient((uri, headers) async {
+      calls += 1;
+      inFlight += 1;
+      if (inFlight > maxInFlight) {
+        maxInFlight = inFlight;
+      }
+
+      if (calls == 1) {
+        await gate.future;
+      }
+
+      inFlight -= 1;
+      return ArxivHttpResponse(statusCode: 200, body: _sampleFeed, headers: {});
+    });
+
+    final client = ArxivClient(
+      httpClient: fakeHttp,
+      clock: FakeClock(DateTime.utc(2024, 1, 1)),
+      config: const ArxivClientConfig(
+        throttle: Duration.zero,
+        cacheTtl: Duration.zero,
+      ),
+    );
+
+    final first = client.search(ArxivQuery.search('all:queued-a'));
+    final second = client.search(ArxivQuery.search('all:queued-b'));
+
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(calls, 1);
+
+    gate.complete();
+    await Future.wait([first, second]);
+
+    expect(calls, 2);
+    expect(maxInFlight, 1);
+  });
+
   test('throws on HTTP error', () async {
     final fakeHttp = FakeHttpClient(
       (uri, headers) =>
@@ -186,6 +280,38 @@ void main() {
     expect(
       () => client.search(ArxivQuery.search('all:error-test')),
       throwsA(isA<ArxivHttpException>()),
+    );
+  });
+
+  test('throws structured exception on API error feed', () async {
+    final fakeHttp = FakeHttpClient(
+      (uri, headers) =>
+          ArxivHttpResponse(statusCode: 200, body: _errorFeed, headers: {}),
+    );
+    final client = ArxivClient(
+      httpClient: fakeHttp,
+      clock: FakeClock(DateTime.utc(2024, 1, 1)),
+      config: const ArxivClientConfig(
+        throttle: Duration.zero,
+        cacheTtl: Duration.zero,
+      ),
+    );
+
+    expect(
+      () => client.search(ArxivQuery.search('all:error-feed')),
+      throwsA(
+        isA<ArxivApiException>()
+            .having(
+              (e) => e.errorId,
+              'errorId',
+              contains('incorrect_id_format'),
+            )
+            .having(
+              (e) => e.summary,
+              'summary',
+              contains('not valid for id_list'),
+            ),
+      ),
     );
   });
 
@@ -213,11 +339,29 @@ void main() {
       ),
     );
 
-    await client.search(
-      ArxivQuery.search('all:cap-test', maxResults: 5000),
-    );
+    await client.search(ArxivQuery.search('all:cap-test', maxResults: 5000));
 
     final uri = fakeHttp.requested.single;
     expect(uri.queryParameters['max_results'], '2000');
+  });
+
+  test('accepts maxResults of zero', () async {
+    final fakeHttp = FakeHttpClient(
+      (uri, headers) =>
+          ArxivHttpResponse(statusCode: 200, body: _sampleFeed, headers: {}),
+    );
+    final client = ArxivClient(
+      httpClient: fakeHttp,
+      clock: FakeClock(DateTime.utc(2024, 1, 1)),
+      config: const ArxivClientConfig(
+        throttle: Duration.zero,
+        cacheTtl: Duration.zero,
+      ),
+    );
+
+    await client.search(ArxivQuery.search('all:zero-results', maxResults: 0));
+
+    final uri = fakeHttp.requested.single;
+    expect(uri.queryParameters['max_results'], '0');
   });
 }

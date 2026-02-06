@@ -43,18 +43,14 @@ class ArxivEntry {
 }
 
 class ArxivAuthor {
-  ArxivAuthor({required this.name});
+  ArxivAuthor({required this.name, this.affiliation});
 
   final String name;
+  final String? affiliation;
 }
 
 class ArxivLink {
-  ArxivLink({
-    required this.href,
-    this.rel,
-    this.type,
-    this.title,
-  });
+  ArxivLink({required this.href, this.rel, this.type, this.title});
 
   final String href;
   final String? rel;
@@ -63,11 +59,7 @@ class ArxivLink {
 }
 
 class ArxivCategory {
-  ArxivCategory({
-    required this.term,
-    this.scheme,
-    this.label,
-  });
+  ArxivCategory({required this.term, this.scheme, this.label});
 
   final String term;
   final String? scheme;

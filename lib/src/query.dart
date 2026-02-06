@@ -72,12 +72,44 @@ class ArxivQuery {
     ArxivSortBy? sortBy,
     ArxivSortOrder? sortOrder,
   }) {
-    final cleaned = ids.map((id) => id.trim()).where((id) => id.isNotEmpty).toList();
+    final cleaned = ids
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toList();
     if (cleaned.isEmpty) {
       throw ArxivException('idList must not be empty.');
     }
     return ArxivQuery._(
       searchQuery: null,
+      idList: cleaned,
+      start: start,
+      maxResults: maxResults,
+      sortBy: sortBy,
+      sortOrder: sortOrder,
+    );
+  }
+
+  factory ArxivQuery.searchWithIdFilter(
+    String searchQuery,
+    List<String> ids, {
+    int start = 0,
+    int? maxResults,
+    ArxivSortBy? sortBy,
+    ArxivSortOrder? sortOrder,
+  }) {
+    final trimmed = searchQuery.trim();
+    if (trimmed.isEmpty) {
+      throw ArxivException('searchQuery must not be empty.');
+    }
+    final cleaned = ids
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toList();
+    if (cleaned.isEmpty) {
+      throw ArxivException('idList must not be empty.');
+    }
+    return ArxivQuery._(
+      searchQuery: trimmed,
       idList: cleaned,
       start: start,
       maxResults: maxResults,
@@ -142,8 +174,7 @@ class ArxivQuery {
     if (to.isBefore(from)) {
       throw ArxivException('Date range end must not be before start.');
     }
-    final range =
-        '$trimmedField:[${_formatDate(from)} TO ${_formatDate(to)}]';
+    final range = '$trimmedField:[${_formatDate(from)} TO ${_formatDate(to)}]';
     return ArxivQuery.search(
       range,
       start: start,
