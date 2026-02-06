@@ -9,7 +9,9 @@ import 'parser.dart';
 import 'parsing/atom_parser.dart';
 import 'query.dart';
 
+/// Configuration options for [ArxivClient].
 class ArxivClientConfig {
+  /// Creates a client configuration.
   const ArxivClientConfig({
     this.baseUrl = 'https://export.arxiv.org/api/query',
     this.pageSize = 100,
@@ -22,18 +24,39 @@ class ArxivClientConfig {
     this.timeout = const Duration(seconds: 30),
   });
 
+  /// Base query endpoint URL.
   final String baseUrl;
+
+  /// Default page size used when a query omits `max_results`.
   final int pageSize;
+
+  /// Minimum delay between outgoing requests.
   final Duration throttle;
+
+  /// Cache time-to-live for response payloads.
   final Duration cacheTtl;
+
+  /// Upper bound for `max_results` when cap enforcement is enabled.
   final int maxResultsCap;
+
+  /// Whether to clamp requested `max_results` to [maxResultsCap].
   final bool enforceMaxResultsCap;
+
+  /// Optional `User-Agent` header value.
   final String? userAgent;
+
+  /// Default headers sent with each request.
   final Map<String, String> defaultHeaders;
+
+  /// Request timeout applied to each network call.
   final Duration timeout;
 }
 
+/// High-level arXiv API client with throttling and response caching.
 class ArxivClient {
+  /// Creates an arXiv client.
+  ///
+  /// Optional dependencies can be injected for testing or customization.
   ArxivClient({
     ArxivClientConfig? config,
     ArxivHttpClient? httpClient,
@@ -46,6 +69,7 @@ class ArxivClient {
        _clock = clock ?? const SystemArxivClock(),
        _parser = parser ?? AtomParser();
 
+  /// Effective configuration used by this instance.
   final ArxivClientConfig config;
   final ArxivHttpClient _httpClient;
   final ArxivCache _cache;
@@ -55,6 +79,7 @@ class ArxivClient {
   DateTime? _lastRequestAt;
   Future<void> _requestQueue = Future<void>.value();
 
+  /// Executes [query] and returns the parsed arXiv result page.
   Future<ArxivResultPage> search(ArxivQuery query) {
     return _enqueue(() async {
       _validateQuery(query);
@@ -93,6 +118,7 @@ class ArxivClient {
     });
   }
 
+  /// Closes the underlying HTTP client resources.
   Future<void> close() => _httpClient.close();
 
   void _validateQuery(ArxivQuery query) {
