@@ -1,3 +1,9 @@
+## 0.0.3
+
+* Added a standards-aligned `example/` directory with runnable samples for
+  quick start usage, query builders, client configuration, and error handling.
+* Added an `Examples` section in `README.md` linking to the new example files.
+
 ## 0.0.2
 
 * Added `ArxivQuery.searchWithIdFilter` to support combined

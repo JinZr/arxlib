@@ -1,6 +1,6 @@
 name: arxlib
-description: "A lightweight Dart client for the arXiv API."
-version: 0.0.2
+description: "Typed Dart client for querying the arXiv API, parsing Atom feeds, and supporting throttled, cache-friendly research search workflows."
+version: 0.0.3
 repository: https://github.com/JinZr/arxlib.git
 
 environment:

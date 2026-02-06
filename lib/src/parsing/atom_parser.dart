@@ -4,6 +4,7 @@ import '../errors.dart';
 import '../models.dart';
 import '../parser.dart';
 
+/// Atom feed parser implementation for arXiv API responses.
 class AtomParser implements ArxivFeedParser {
   @override
   ArxivResultPage parse(String xml) {

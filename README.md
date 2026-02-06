@@ -44,6 +44,21 @@ Future<void> main() async {
 }
 ```
 
+## Examples
+
+Runnable examples are available in `example/`:
+
+- `example/main.dart`: quick start search and result parsing.
+- `example/query_builders.dart`: core `ArxivQuery` constructors.
+- `example/client_configuration.dart`: key `ArxivClientConfig` options.
+- `example/error_handling.dart`: handling API, HTTP, and library exceptions.
+
+Run an example from the package root, for example:
+
+```bash
+dart run example/main.dart
+```
+
 ## Additional information
 
 Notes:

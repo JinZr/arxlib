@@ -1,8 +1,20 @@
 import 'errors.dart';
 
-enum ArxivSortBy { relevance, lastUpdatedDate, submittedDate }
+/// Sort keys supported by the arXiv API.
+enum ArxivSortBy {
+  /// Sort by arXiv relevance score.
+  relevance,
 
+  /// Sort by last update timestamp.
+  lastUpdatedDate,
+
+  /// Sort by submission timestamp.
+  submittedDate,
+}
+
+/// Converts [ArxivSortBy] values to API parameter strings.
 extension ArxivSortByApi on ArxivSortBy {
+  /// API value used in the `sortBy` query parameter.
   String get apiValue {
     switch (this) {
       case ArxivSortBy.relevance:
@@ -15,9 +27,18 @@ extension ArxivSortByApi on ArxivSortBy {
   }
 }
 
-enum ArxivSortOrder { ascending, descending }
+/// Sort direction supported by the arXiv API.
+enum ArxivSortOrder {
+  /// Sort in ascending order.
+  ascending,
 
+  /// Sort in descending order.
+  descending,
+}
+
+/// Converts [ArxivSortOrder] values to API parameter strings.
 extension ArxivSortOrderApi on ArxivSortOrder {
+  /// API value used in the `sortOrder` query parameter.
   String get apiValue {
     switch (this) {
       case ArxivSortOrder.ascending:
@@ -28,6 +49,7 @@ extension ArxivSortOrderApi on ArxivSortOrder {
   }
 }
 
+/// Immutable query object for arXiv API requests.
 class ArxivQuery {
   const ArxivQuery._({
     this.searchQuery,
@@ -38,13 +60,25 @@ class ArxivQuery {
     this.sortOrder,
   });
 
+  /// Raw `search_query` string for the API.
   final String? searchQuery;
+
+  /// IDs for the `id_list` API parameter.
   final List<String>? idList;
+
+  /// Zero-based start offset.
   final int? start;
+
+  /// Maximum number of results to request.
   final int? maxResults;
+
+  /// Optional sort field.
   final ArxivSortBy? sortBy;
+
+  /// Optional sort direction.
   final ArxivSortOrder? sortOrder;
 
+  /// Creates a query from an arXiv search expression.
   factory ArxivQuery.search(
     String searchQuery, {
     int start = 0,
@@ -65,6 +99,7 @@ class ArxivQuery {
     );
   }
 
+  /// Creates a query that fetches by explicit arXiv IDs.
   factory ArxivQuery.idList(
     List<String> ids, {
     int start = 0,
@@ -89,6 +124,7 @@ class ArxivQuery {
     );
   }
 
+  /// Creates a query combining a search expression with an ID filter.
   factory ArxivQuery.searchWithIdFilter(
     String searchQuery,
     List<String> ids, {
@@ -118,6 +154,7 @@ class ArxivQuery {
     );
   }
 
+  /// Creates a latest-first query for a given arXiv category.
   factory ArxivQuery.latestByCategory(
     String category, {
     int start = 0,
@@ -137,6 +174,7 @@ class ArxivQuery {
     );
   }
 
+  /// Creates a query for papers by a specific author.
   factory ArxivQuery.byAuthor(
     String author, {
     int start = 0,
@@ -158,6 +196,10 @@ class ArxivQuery {
     );
   }
 
+  /// Creates a query constrained to a date range.
+  ///
+  /// [field] defaults to `submittedDate` and can be changed to supported
+  /// date fields accepted by the arXiv search syntax.
   factory ArxivQuery.withDateRange(
     DateTime from,
     DateTime to, {
@@ -184,6 +226,9 @@ class ArxivQuery {
     );
   }
 
+  /// Serializes the query into HTTP query parameters.
+  ///
+  /// If [defaultMaxResults] is provided, it is used when [maxResults] is null.
   Map<String, String> toQueryParameters({int? defaultMaxResults}) {
     final params = <String, String>{};
     if (searchQuery != null && searchQuery!.trim().isNotEmpty) {
