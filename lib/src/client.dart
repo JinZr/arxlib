@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'cache.dart';
 import 'clock.dart';
 import 'errors.dart';
@@ -38,11 +40,11 @@ class ArxivClient {
     ArxivCache? cache,
     ArxivClock? clock,
     ArxivFeedParser? parser,
-  })  : config = config ?? const ArxivClientConfig(),
-        _httpClient = httpClient ?? DefaultArxivHttpClient(),
-        _cache = cache ?? InMemoryArxivCache(),
-        _clock = clock ?? const SystemArxivClock(),
-        _parser = parser ?? AtomParser();
+  }) : config = config ?? const ArxivClientConfig(),
+       _httpClient = httpClient ?? DefaultArxivHttpClient(),
+       _cache = cache ?? InMemoryArxivCache(),
+       _clock = clock ?? const SystemArxivClock(),
+       _parser = parser ?? AtomParser();
 
   final ArxivClientConfig config;
   final ArxivHttpClient _httpClient;
@@ -51,59 +53,60 @@ class ArxivClient {
   final ArxivFeedParser _parser;
 
   DateTime? _lastRequestAt;
+  Future<void> _requestQueue = Future<void>.value();
 
-  Future<ArxivResultPage> search(ArxivQuery query) async {
-    _validateQuery(query);
+  Future<ArxivResultPage> search(ArxivQuery query) {
+    return _enqueue(() async {
+      _validateQuery(query);
 
-    final effectiveMax = _effectiveMaxResults(query.maxResults);
-    final params = query.toQueryParameters(defaultMaxResults: effectiveMax);
-    if (config.enforceMaxResultsCap &&
-        query.maxResults != null &&
-        query.maxResults! > config.maxResultsCap) {
-      params['max_results'] = effectiveMax.toString();
-    }
-    final uri = _buildUri(params);
+      final effectiveMax = _effectiveMaxResults(query.maxResults);
+      final params = query.toQueryParameters(defaultMaxResults: effectiveMax);
+      if (config.enforceMaxResultsCap &&
+          query.maxResults != null &&
+          query.maxResults! > config.maxResultsCap) {
+        params['max_results'] = effectiveMax.toString();
+      }
+      final uri = _buildUri(params);
 
-    final cached = await _getCached(uri);
-    if (cached != null) {
-      return _parser.parse(cached.payload);
-    }
+      final cached = await _getCached(uri);
+      if (cached != null) {
+        return _parser.parse(cached.payload);
+      }
 
-    await _applyThrottle();
+      await _applyThrottle();
 
-    final headers = _buildHeaders();
-    final response = await _httpClient
-        .get(uri, headers: headers)
-        .timeout(config.timeout);
+      final headers = _buildHeaders();
+      final response = await _httpClient
+          .get(uri, headers: headers)
+          .timeout(config.timeout);
 
-    if (response.statusCode != 200) {
-      throw ArxivHttpException(
-        statusCode: response.statusCode,
-        requestUrl: uri,
-        responseBody: response.body,
-      );
-    }
+      if (response.statusCode != 200) {
+        throw ArxivHttpException(
+          statusCode: response.statusCode,
+          requestUrl: uri,
+          responseBody: response.body,
+        );
+      }
 
-    await _storeCache(uri, response.body);
-    return _parser.parse(response.body);
+      await _storeCache(uri, response.body);
+      return _parser.parse(response.body);
+    });
   }
 
   Future<void> close() => _httpClient.close();
 
   void _validateQuery(ArxivQuery query) {
-    final hasSearch = query.searchQuery != null && query.searchQuery!.isNotEmpty;
+    final hasSearch =
+        query.searchQuery != null && query.searchQuery!.isNotEmpty;
     final hasIds = query.idList != null && query.idList!.isNotEmpty;
-    if (hasSearch && hasIds) {
-      throw ArxivException('Provide either searchQuery or idList, not both.');
-    }
     if (!hasSearch && !hasIds) {
       throw ArxivException('Provide either searchQuery or idList.');
     }
     if (query.start != null && query.start! < 0) {
       throw ArxivException('start must be >= 0.');
     }
-    if (query.maxResults != null && query.maxResults! <= 0) {
-      throw ArxivException('maxResults must be > 0.');
+    if (query.maxResults != null && query.maxResults! < 0) {
+      throw ArxivException('maxResults must be >= 0.');
     }
   }
 
@@ -171,18 +174,28 @@ class ArxivClient {
     final key = _cacheKey(uri);
     await _cache.set(
       key,
-      ArxivCacheEntry(
-        storedAt: _clock.now().toUtc(),
-        payload: payload,
-      ),
+      ArxivCacheEntry(storedAt: _clock.now().toUtc(), payload: payload),
     );
   }
 
   String _cacheKey(Uri uri) {
     final now = _clock.now().toUtc();
-    final day = '${now.year.toString().padLeft(4, '0')}'
+    final day =
+        '${now.year.toString().padLeft(4, '0')}'
         '${now.month.toString().padLeft(2, '0')}'
         '${now.day.toString().padLeft(2, '0')}';
     return '${uri.toString()}|$day';
+  }
+
+  Future<T> _enqueue<T>(Future<T> Function() action) {
+    final completer = Completer<T>();
+    _requestQueue = _requestQueue.catchError((_) {}).then((_) async {
+      try {
+        completer.complete(await action());
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
   }
 }

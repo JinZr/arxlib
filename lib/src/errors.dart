@@ -19,6 +19,20 @@ class ArxivHttpException extends ArxivException {
   final String responseBody;
 
   @override
-  String toString() =>
-      'ArxivHttpException: HTTP $statusCode for $requestUrl';
+  String toString() => 'ArxivHttpException: HTTP $statusCode for $requestUrl';
+}
+
+class ArxivApiException extends ArxivException {
+  ArxivApiException({
+    required this.errorId,
+    required this.summary,
+    this.helpUrl,
+  }) : super(summary);
+
+  final String errorId;
+  final String summary;
+  final String? helpUrl;
+
+  @override
+  String toString() => 'ArxivApiException: $summary';
 }

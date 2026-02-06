@@ -13,13 +13,31 @@ class AtomParser implements ArxivFeedParser {
       throw ArxivException('Unexpected root element: ${feed.name.local}');
     }
 
-    final entries = _childrenByLocalName(feed, 'entry')
-        .map(_parseEntry)
-        .toList(growable: false);
+    final entries = _childrenByLocalName(
+      feed,
+      'entry',
+    ).map(_parseEntry).toList(growable: false);
 
-    final totalResults = _intFromElement(feed, 'totalResults') ?? entries.length;
+    if (entries.length == 1 && _isApiErrorEntry(entries.first)) {
+      final errorEntry = entries.first;
+      final summary = errorEntry.summary.trim().isEmpty
+          ? 'arXiv API returned an error response.'
+          : errorEntry.summary.trim();
+      final helpUrl = errorEntry.links.isEmpty
+          ? null
+          : errorEntry.links.first.href;
+      throw ArxivApiException(
+        errorId: errorEntry.id,
+        summary: summary,
+        helpUrl: helpUrl,
+      );
+    }
+
+    final totalResults =
+        _intFromElement(feed, 'totalResults') ?? entries.length;
     final startIndex = _intFromElement(feed, 'startIndex') ?? 0;
-    final itemsPerPage = _intFromElement(feed, 'itemsPerPage') ?? entries.length;
+    final itemsPerPage =
+        _intFromElement(feed, 'itemsPerPage') ?? entries.length;
 
     return ArxivResultPage(
       entries: entries,
@@ -38,7 +56,12 @@ class AtomParser implements ArxivFeedParser {
     final updated = _parseDate(_textOf(entry, 'updated'));
 
     final authors = _childrenByLocalName(entry, 'author')
-        .map((author) => ArxivAuthor(name: _textOf(author, 'name') ?? ''))
+        .map(
+          (author) => ArxivAuthor(
+            name: _textOf(author, 'name') ?? '',
+            affiliation: _optionalTrimmedText(_textOf(author, 'affiliation')),
+          ),
+        )
         .toList(growable: false);
 
     final links = _childrenByLocalName(entry, 'link')
@@ -64,8 +87,10 @@ class AtomParser implements ArxivFeedParser {
         .where((category) => category.term.isNotEmpty)
         .toList(growable: false);
 
-    final primaryCategoryElement =
-        _firstChildByLocalName(entry, 'primary_category');
+    final primaryCategoryElement = _firstChildByLocalName(
+      entry,
+      'primary_category',
+    );
     final primaryCategory = primaryCategoryElement == null
         ? null
         : ArxivCategory(
@@ -89,9 +114,19 @@ class AtomParser implements ArxivFeedParser {
       categories: categories,
       primaryCategory: primaryCategory,
       comment: comment?.trim().isEmpty == true ? null : comment?.trim(),
-      journalRef: journalRef?.trim().isEmpty == true ? null : journalRef?.trim(),
+      journalRef: journalRef?.trim().isEmpty == true
+          ? null
+          : journalRef?.trim(),
       doi: doi?.trim().isEmpty == true ? null : doi?.trim(),
     );
+  }
+
+  bool _isApiErrorEntry(ArxivEntry entry) {
+    final normalizedTitle = entry.title.trim().toLowerCase();
+    final normalizedId = entry.id.trim().toLowerCase();
+    return normalizedTitle == 'error' &&
+        (normalizedId.contains('/api/errors#') ||
+            normalizedId.contains('/help/api/errors#'));
   }
 
   DateTime _parseDate(String? value) {
@@ -134,5 +169,16 @@ class AtomParser implements ArxivFeedParser {
 
   String _normalizeWhitespace(String value) {
     return value.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  String? _optionalTrimmedText(String? value) {
+    if (value == null) {
+      return null;
+    }
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    return trimmed;
   }
 }
